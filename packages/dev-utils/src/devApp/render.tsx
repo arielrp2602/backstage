@@ -14,26 +14,30 @@
  * limitations under the License.
  */
 
-import { hot } from 'react-hot-loader';
-import React, { ComponentType, ReactNode } from 'react';
-import ReactDOM from 'react-dom';
-import BookmarkIcon from '@material-ui/icons/Bookmark';
 import {
+  AlertDisplay,
+  AnyApiFactory,
+  ApiFactory,
+  attachComponentData,
   createApp,
-  SidebarPage,
+  createPlugin,
+  createRoutableExtension,
+  createRouteRef,
+  FlatRoutes,
+  IconComponent,
+  OAuthRequestDialog,
+  RouteRef,
   Sidebar,
   SidebarItem,
+  SidebarPage,
   SidebarSpacer,
-  ApiFactory,
-  createPlugin,
-  AlertDisplay,
-  OAuthRequestDialog,
-  AnyApiFactory,
-  IconComponent,
-  FlatRoutes,
-  attachComponentData,
 } from '@backstage/core';
+import { Box } from '@material-ui/core';
+import BookmarkIcon from '@material-ui/icons/Bookmark';
 import SentimentDissatisfiedIcon from '@material-ui/icons/SentimentDissatisfied';
+import React, { ComponentType, ReactNode } from 'react';
+import ReactDOM from 'react-dom';
+import { hot } from 'react-hot-loader';
 
 const GatheringRoute: (props: {
   path: string;
@@ -128,9 +132,34 @@ class DevAppBuilder {
    * Build a DevApp component using the resources registered so far
    */
   build(): ComponentType<{}> {
+    const dummyPlugin = createPlugin({
+      id: 'dummy',
+      routes: {
+        dummy: createRouteRef({ title: 'Page belonging to another plugin' }),
+      },
+    });
+
+    const DummyPage = dummyPlugin.provide(
+      createRoutableExtension({
+        mountPoint: dummyPlugin.routes.dummy,
+        component: async () => () => (
+          <Box p={3}>Page belonging to another plugin.</Box>
+        ),
+      }),
+    );
+
     const app = createApp({
       apis: this.apis,
       plugins: this.plugins,
+      bindRoutes: ({ bind }) => {
+        for (const plugin of this.plugins ?? []) {
+          const targets: Record<string, RouteRef<any>> = {};
+          for (const routeKey of Object.keys(plugin.externalRoutes)) {
+            targets[routeKey] = dummyPlugin.routes.dummy;
+          }
+          bind(plugin.externalRoutes, targets);
+        }
+      },
     });
 
     const AppProvider = app.getProvider();
@@ -145,13 +174,16 @@ class DevAppBuilder {
           <AlertDisplay />
           <OAuthRequestDialog />
           {this.rootChildren}
-
           <AppRouter>
             <SidebarPage>
               {sidebar}
               <FlatRoutes>
                 {this.routes}
                 {deprecatedAppRoutes}
+                <GatheringRoute
+                  path="/some-externally-provided-route"
+                  element={<DummyPage />}
+                />
               </FlatRoutes>
             </SidebarPage>
           </AppRouter>
